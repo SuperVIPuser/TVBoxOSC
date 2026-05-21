@@ -10,12 +10,9 @@ jobs:
       - name: 拉取本仓库代码
         uses: actions/checkout@v4
 
-      - name: 克隆稳定版TVBox源码
+      - name: 克隆TVBox源码并配置环境
         run: |
           git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox-src
-
-      - name: 配置构建环境（关键修复）
-        run: |
           cd tvbox-src
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
