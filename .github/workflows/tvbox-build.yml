@@ -1,7 +1,16 @@
-name: TVBox编译构建
+name: TVBox自动构建
 
 on:
   workflow_dispatch:
+    inputs:
+      rebuild:
+        description: '忽略构建记录，强制重新构建'
+        required: false
+        type: boolean
+      donotpublish:
+        description: '构建后不发布新版本'
+        required: false
+        type: boolean
 
 jobs:
   build:
@@ -9,62 +18,135 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        repo:
-          - user: takagen99
-            name: Box
-            branch: main
-            jdk: 11
+        include:
+          - userName: q215613905
+            repoName: TVBoxOS
+            branchName: main
+            java_ver: 17
+          - userName: takagen99
+            repoName: Box
+            branchName: main
+            java_ver: 17
 
     steps:
       - name: 拉取本仓库代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: 拉取TVBox源码
+      - name: 检查源码更新
         run: |
-          git clone --depth 1 -b ${{ matrix.repo.branch }} https://github.com/${{ matrix.repo.user }}/${{ matrix.repo.name }} tvbox-src
+          upStream=https://github.com/${{ matrix.userName }}/${{ matrix.repoName }}
+          echo "upStream=$upStream" >> $GITHUB_ENV
+          commit=$(curl -sl $upStream/commits/${{ matrix.branchName }} | grep -o "/${{ matrix.branchName }}/.*\"" | sed -r "s/.*\/${{ matrix.branchName }}\/(.*)\".*/\1/")
+          if [[ -z "$commit" ]]; then
+            commit=$(curl -s "https://api.github.com/repos/${{ matrix.userName }}/${{ matrix.repoName }}/commits/${{ matrix.branchName }}" | jq -r '.sha')
+          fi
+          if ! grep -q "$commit" README.md || [[ "${{ inputs.rebuild }}" == "true" ]]; then
+            echo "commit=$commit" >> $GITHUB_ENV
+            echo "commitS=${commit:0:7}" >> $GITHUB_ENV
+          fi
 
-      - name: 修复构建配置（核心步骤）
-        working-directory: tvbox-src
+      - name: 拉取源码
+        if: ${{ env.commit }}
         run: |
-          # 1. 创建local.properties，解决文件缺失问题
-          touch local.properties
-          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+          git clone ${{ env.upStream }} TVBoxOSC
+          cd TVBoxOSC
+          git checkout ${{ env.commit }}
+          echo "tag=$(git log --date-format='%Y%m%d-%H%M' --pretty=format:%cd ${{ env.commit }})" >> $GITHUB_ENV
 
-          # 2. 彻底删除所有阿里云镜像配置
-          sed -i '/maven.*aliyun/d' build.gradle
-          sed -i '/maven.*aliyun/d' app/build.gradle
+      - name: 预修改构建配置
+        if: ${{ env.commit }}
+        working-directory: TVBoxOSC
+        run: |
+          echo '修改版本号'
+          if [ "${{ matrix.userName }}" == "takagen99" ]; then
+            sed -i 's/\.concat(buildTime())/ +"${{ env.tag }}"/g' app/build.gradle
+            sed -i '/android:text/s/#/#="${{ env.tag }}\\\\\n\\\\n#/' app/src/main/res/launcher.xml
+          else
+            sed -i "/versionName/s/[0-9a-zA-Z.\\'\\'\\-]\+/${{ env.tag }}/#" app/build.gradle
+            sed -i "/android:text/s/#/#=\"${{ env.tag }}\"#\\\\n\\\\n#" app/src/main/res/launcher.xml
+          fi
+          echo '移除阿里云镜像，防止构建失败'
+          sed -i '/maven { url "https:\/\/maven.aliyun.com\/repository\/public" }/d' build.gradle
+          sed -i '/maven { url "https:\/\/maven.aliyun.com\/nexus\/content\/repositories\/public" }/d' build.gradle
 
-          # 3. 给JitPack配置匿名认证，解决401问题
-          sed -i 's|url "https://jitpack.io"|url "https://jitpack.io" credentials { username "github" password "" }|g' build.gradle
+      - name: 打包源码
+        if: ${{ env.commit }}
+        working-directory: TVBoxOSC
+        run: |
+          tar -cJf sourceCode-${{ env.commitS }}.tar.xz --exclude=.git --exclude=.github *
 
-          # 4. 配置通用签名
+      - name: 配置Python环境（仅q215613905需要）
+        if: ${{ matrix.userName == 'q215613905' && env.commit }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.8'
+
+      - name: 安装Python依赖
+        if: ${{ matrix.userName == 'q215613905' && env.commit }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4
+
+      - name: 修复Python路径问题
+        if: ${{ env.commit }}
+        working-directory: TVBoxOSC
+        run: |
+          sed -i '/buildPython.*python.exe/d' pyramid/build.gradle
+
+      - name: 创建local.properties
+        if: ${{ matrix.userName == 'q215613905' && env.commit }}
+        working-directory: TVBoxOSC
+        run: echo "" > local.properties
+
+      - name: 配置通用签名
+        if: ${{ env.commit }}
+        working-directory: TVBoxOSC
+        run: |
+          signingConfigs='ICAgIHNpZ25pbmdb25maWdzIHTtCiAgICAgICAgYWgKYg2p1Y3QuaGFzUHlJVV'
+          signingConfig="$(echo "$signingConfigs" | base64 -d )"
+          sed -i -e "/defaultConfig {/i\    signingConfig $signingConfig" -e "/debug {/a\    signingConfig $signingConfig" app/build.gradle
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
-          # 5. 授予执行权限
-          chmod +x gradlew
-
-      - name: 配置JDK环境（改用兼容的JDK11）
-        uses: actions/setup-java@v4
+      - name: 配置JDK
+        uses: actions/setup-java@v5
         with:
-          java-version: ${{ matrix.repo.jdk }}
           distribution: temurin
+          java-version: ${{ matrix.java_ver }}
 
-      - name: 开始编译Release包
-        working-directory: tvbox-src
+      - uses: gradle/actions/setup-gradle@v6
+        if: ${{ env.commit }}
+
+      - name: 开始构建
+        if: ${{ env.commit }}
+        working-directory: TVBoxOSC
         run: |
-          ./gradlew clean assembleRelease --no-build-cache --stacktrace --info
+          chmod +x gradlew
+          ./gradlew assemblerelease --build-cache --parallel --daemon --warning-mode all
 
-      - name: 整理编译好的APK
+      - name: 整理成品
+        if: ${{ env.commit }}
         run: |
-          mkdir -p output
-          find ./tvbox-src -name "*release*.apk" -exec mv {} ./output/ \;
+          rm -rf apk/
+          mkdir -p apk/
+          for file in `find ~ -name "*release*.apk" -print`; do
+            base=`basename "$file"`;
+            if [[ "$base" == TVBox* ]]; then
+              new_base=$(echo "$base" | sed "s/release/${{ matrix.userName }}_${{ env.tag }}/")
+            else
+              new_base="TVBox_${{ matrix.userName }}_${{ env.tag }}.apk"
+            fi
+            mv "$file" "apk/$new_base"
+          done
+          mv sourceCode-${{ env.commitS }}.* apk/
 
-      - name: 上传成品APK
+      - name: 上传APK到构建产物
+        if: ${{ env.commit }}
         uses: actions/upload-artifact@v4
         with:
-          name: TVBox成品APK-${{ matrix.repo.name }}
-          path: output/
-          retention-days: 30
+          name: ${{ matrix.userName }}-${{ matrix.repoName }}
+          path: TVBoxOSC/apk/*
