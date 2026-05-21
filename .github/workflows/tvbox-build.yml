@@ -27,9 +27,18 @@ jobs:
         run: |
           git clone --depth 1 -b ${{ matrix.repo.branch }} https://github.com/${{ matrix.repo.user }}/${{ matrix.repo.name }} tvbox-src
 
-      - name: 内置通用签名配置
+      - name: 修复Maven源+创建必要文件
         working-directory: tvbox-src
         run: |
+          # 1. 创建local.properties，解决文件缺失问题
+          touch local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+
+          # 2. 替换阿里云镜像为官方源，解决502错误
+          sed -i 's/maven { url "https:\/\/maven.aliyun.com\/repository\/public" }//g' build.gradle
+          sed -i 's/maven { url "https:\/\/maven.aliyun.com\/nexus\/content\/repositories\/public" }//g' build.gradle
+
+          # 3. 配置通用签名
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
@@ -55,6 +64,6 @@ jobs:
       - name: 上传成品APK
         uses: actions/upload-artifact@v4
         with:
-          name: TVBox成品APK
+          name: TVBox成品APK-${{ matrix.repo.name }}
           path: output/
           retention-days: 30
