@@ -1,0 +1,60 @@
+name: TVBox编译构建
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - user: q215613905
+            name: TVBoxOS
+            branch: main
+            jdk: 17
+          - user: takagen99
+            name: Box
+            branch: main
+            jdk: 17
+
+    steps:
+      - name: 拉取本仓库代码
+        uses: actions/checkout@v4
+
+      - name: 拉取TVBox源码
+        run: |
+          git clone --depth 1 -b ${{ matrix.repo.branch }} https://github.com/${{ matrix.repo.user }}/${{ matrix.repo.name }} tvbox-src
+
+      - name: 内置通用签名配置
+        working-directory: tvbox-src
+        run: |
+          echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
+          echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
+          echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
+          echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
+
+      - name: 配置JDK环境
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.repo.jdk }}
+          distribution: temurin
+
+      - name: 开始编译Release包
+        working-directory: tvbox-src
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assembleRelease --no-build-cache
+
+      - name: 整理编译好的APK
+        run: |
+          mkdir -p output
+          find ./tvbox-src -name "*release*.apk" -exec mv {} ./output/ \;
+
+      - name: 上传成品APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVBox成品APK
+          path: output/
+          retention-days: 30
