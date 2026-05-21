@@ -1,4 +1,4 @@
-name: TVBox稳定构建
+name: TVBox极简构建
 
 on:
   workflow_dispatch:
@@ -7,42 +7,34 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取本仓库代码
-        uses: actions/checkout@v4
-
-      - name: 克隆TVBox源码并配置环境
+      - name: 构建TVBox
         run: |
+          # 拉取源码
           git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox-src
           cd tvbox-src
+
+          # 创建配置文件
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
-
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
+          # 赋予执行权限
           chmod +x gradlew
 
-      - name: 配置JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: 17
-          distribution: temurin
-
-      - name: 开始编译Release包
-        working-directory: tvbox-src
-        run: |
+          # 配置JDK并编译
+          java -version
           ./gradlew clean assembleRelease --no-build-cache
 
-      - name: 整理APK
-        run: |
-          mkdir -p output
-          find ./tvbox-src -name "*release*.apk" -exec mv {} ./output/ \;
+          # 整理APK
+          mkdir -p ../output
+          find . -name "*release*.apk" -exec mv {} ../output/ \;
 
       - name: 上传成品APK
         uses: actions/upload-artifact@v4
         with:
-          name: TVBox稳定版APK
+          name: TVBox成品APK
           path: output/
           retention-days: 30
