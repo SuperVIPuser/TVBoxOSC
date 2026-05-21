@@ -1,137 +1,54 @@
-name: TVBox自动构建
+name: TVBox极简构建
 
 on:
   workflow_dispatch:
-    inputs:
-      rebuild:
-        description: '忽略构建记录，强制重新构建'
-        required: false
-        type: boolean
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - userName: q215613905
-            repoName: TVBoxOS
-            branchName: main
-            java_ver: 17
-
     steps:
       - name: 拉取本仓库代码
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
-      - name: 检查源码更新
+      - name: 拉取TVBox源码（只保留q215613905/TVBoxOS）
         run: |
-          upStream=https://github.com/${{ matrix.userName }}/${{ matrix.repoName }}
-          echo "upStream=$upStream" >> $GITHUB_ENV
-          commit=$(curl -sl $upStream/commits/${{ matrix.branchName }} | grep -o "/${{ matrix.branchName }}/.*\"" | sed -r "s/.*\/${{ matrix.branchName }}\/(.*)\".*/\1/")
-          if [[ -z "$commit" ]]; then
-            commit=$(curl -s "https://api.github.com/repos/${{ matrix.userName }}/${{ matrix.repoName }}/commits/${{ matrix.branchName }}" | jq -r '.sha')
-          fi
-          if ! grep -q "$commit" README.md || [[ "${{ inputs.rebuild }}" == "true" ]]; then
-            echo "commit=$commit" >> $GITHUB_ENV
-            echo "commitS=${commit:0:7}" >> $GITHUB_ENV
-          fi
+          git clone --depth 1 https://github.com/q215613905/TVBoxOS tvbox-src
 
-      - name: 拉取源码
-        if: ${{ env.commit }}
+      - name: 配置基础构建环境
+        working-directory: tvbox-src
         run: |
-          git clone ${{ env.upStream }} TVBoxOSC
-          cd TVBoxOSC
-          git checkout ${{ env.commit }}
-          echo "tag=$(git log --date-format='%Y%m%d-%H%M' --pretty=format:%cd ${{ env.commit }})" >> $GITHUB_ENV
+          # 创建local.properties，解决文件缺失问题
+          touch local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
-      - name: 预修改构建配置（修复sed语法）
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: |
-          echo '修改版本号'
-          # 用更稳妥的写法，避免引号嵌套问题
-          sed -i "s/versionName \".*\"/versionName \"${{ env.tag }}\"/" app/build.gradle
-          sed -i "s/android:text=\"[^\"]*\"/android:text=\"${{ env.tag }}\"/" app/src/main/res/launcher.xml
-
-          echo '移除阿里云镜像'
-          sed -i '/maven.*aliyun/d' build.gradle
-          sed -i '/maven.*aliyun/d' app/build.gradle
-
-      - name: 打包源码
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: |
-          tar -cJf sourceCode-${{ env.commitS }}.tar.xz --exclude=.git --exclude=.github *
-
-      - name: 配置Python环境
-        if: ${{ matrix.userName == 'q215613905' && env.commit }}
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.8'
-
-      - name: 安装Python依赖
-        if: ${{ matrix.userName == 'q215613905' && env.commit }}
-        run: |
-          python -m pip install --upgrade pip
-          pip install lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4
-
-      - name: 修复Python路径
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: |
-          sed -i '/buildPython.*python.exe/d' pyramid/build.gradle
-
-      - name: 创建local.properties
-        if: ${{ matrix.userName == 'q215613905' && env.commit }}
-        working-directory: TVBoxOSC
-        run: echo "" > local.properties
-
-      - name: 配置通用签名
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: |
-          signingConfigs='ICAgIHNpZ25pbmdb25maWdzIHTtCiAgICAgICAgYWgKYg2p1Y3QuaGFzUHlJVV'
-          signingConfig="$(echo "$signingConfigs" | base64 -d )"
-          sed -i -e "/defaultConfig {/i\    signingConfig $signingConfig" -e "/debug {/a\    signingConfig $signingConfig" app/build.gradle
+          # 配置通用签名（不修改任何文件）
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
-      - name: 配置JDK
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: ${{ matrix.java_ver }}
-
-      - uses: gradle/actions/setup-gradle@v6
-        if: ${{ env.commit }}
-
-      - name: 开始构建
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: |
+          # 授予执行权限
           chmod +x gradlew
-          ./gradlew assemblerelease --build-cache --parallel --daemon --warning-mode all
 
-      - name: 整理成品
-        if: ${{ env.commit }}
+      - name: 配置JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: 开始编译Release包（无任何修改）
+        working-directory: tvbox-src
         run: |
-          rm -rf apk/
-          mkdir -p apk/
-          for file in `find ~ -name "*release*.apk" -print`; do
-            base=`basename "$file"`;
-            new_base="TVBox_${{ matrix.userName }}_${{ env.tag }}.apk"
-            mv "$file" "apk/$new_base"
-          done
-          mv sourceCode-${{ env.commitS }}.* apk/
+          ./gradlew clean assembleRelease --no-build-cache
 
-      - name: 上传APK到构建产物
-        if: ${{ env.commit }}
+      - name: 整理APK
+        run: |
+          mkdir -p output
+          find ./tvbox-src -name "*release*.apk" -exec mv {} ./output/ \;
+
+      - name: 上传成品APK
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.userName }}-${{ matrix.repoName }}
-          path: TVBoxOSC/apk/*
+          name: TVBox极简版APK
+          path: output/
+          retention-days: 30
