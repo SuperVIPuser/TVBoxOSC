@@ -14,7 +14,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox-src
 
-      - name: 配置构建环境
+      - name: 配置构建环境（关键修复）
         run: |
           cd tvbox-src
           touch local.properties
