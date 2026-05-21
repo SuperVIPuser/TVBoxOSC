@@ -1,4 +1,4 @@
-name: TVBoxOSC纯净编译
+name: TVBoxOSC纯净构建
 on:
   workflow_dispatch:
 
@@ -6,23 +6,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出环境
-        uses: actions/checkout@v4
-
-      - name: 拉取 TVBoxOSC 源码
+      - name: 拉取上游源码
         run: |
-          git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox
+          git clone --depth 1 https://github.com/CatVodTVOfficial/TVBoxOSC.git tvbox
           cd tvbox
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
 
-      - name: 配置 JDK17
+      - name: 配置JDK17
         uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: temurin
 
-      - name: 编译 Release 包
+      - name: 编译Release包
         working-directory: tvbox
         run: |
           ./gradlew clean assembleRelease --no-build-cache
