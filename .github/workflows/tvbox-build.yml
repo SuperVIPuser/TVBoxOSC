@@ -15,19 +15,16 @@ jobs:
           git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox-src
 
       - name: 配置构建环境
-        working-directory: tvbox-src
         run: |
-          # 创建local.properties
+          cd tvbox-src
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
-          # 配置通用签名
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
-          # 授予执行权限
           chmod +x gradlew
 
       - name: 配置JDK 17
