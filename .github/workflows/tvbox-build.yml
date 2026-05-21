@@ -1,4 +1,4 @@
-name: TVBox极简构建
+name: TVBox极简构建（修复Python路径）
 
 on:
   workflow_dispatch:
@@ -10,24 +10,32 @@ jobs:
       - name: 拉取本仓库代码
         uses: actions/checkout@v4
 
-      - name: 拉取TVBox源码（只保留q215613905/TVBoxOS）
+      - name: 拉取TVBox源码
         run: |
           git clone --depth 1 https://github.com/q215613905/TVBoxOS tvbox-src
 
-      - name: 配置基础构建环境
+      - name: 配置Python环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.8'
+
+      - name: 修复构建配置（核心步骤）
         working-directory: tvbox-src
         run: |
-          # 创建local.properties，解决文件缺失问题
+          # 1. 创建local.properties
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
-          # 配置通用签名（不修改任何文件）
+          # 2. 修复pyramid模块里硬编码的Windows Python路径
+          sed -i 's|buildPython.*python.exe|buildPython "python3"|g' pyramid/build.gradle
+
+          # 3. 配置通用签名
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
-          # 授予执行权限
+          # 4. 授予执行权限
           chmod +x gradlew
 
       - name: 配置JDK 17
@@ -36,7 +44,7 @@ jobs:
           java-version: 17
           distribution: temurin
 
-      - name: 开始编译Release包（无任何修改）
+      - name: 开始编译Release包
         working-directory: tvbox-src
         run: |
           ./gradlew clean assembleRelease --no-build-cache
