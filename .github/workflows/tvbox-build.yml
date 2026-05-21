@@ -7,10 +7,6 @@ on:
         description: '忽略构建记录，强制重新构建'
         required: false
         type: boolean
-      donotpublish:
-        description: '构建后不发布新版本'
-        required: false
-        type: boolean
 
 jobs:
   build:
@@ -21,10 +17,6 @@ jobs:
         include:
           - userName: q215613905
             repoName: TVBoxOS
-            branchName: main
-            java_ver: 17
-          - userName: takagen99
-            repoName: Box
             branchName: main
             java_ver: 17
 
@@ -55,21 +47,18 @@ jobs:
           git checkout ${{ env.commit }}
           echo "tag=$(git log --date-format='%Y%m%d-%H%M' --pretty=format:%cd ${{ env.commit }})" >> $GITHUB_ENV
 
-      - name: 预修改构建配置
+      - name: 预修改构建配置（修复sed语法）
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
           echo '修改版本号'
-          if [ "${{ matrix.userName }}" == "takagen99" ]; then
-            sed -i 's/\.concat(buildTime())/ +"${{ env.tag }}"/g' app/build.gradle
-            sed -i '/android:text/s/#/#="${{ env.tag }}\\\\\n\\\\n#/' app/src/main/res/launcher.xml
-          else
-            sed -i "/versionName/s/[0-9a-zA-Z.\\'\\'\\-]\+/${{ env.tag }}/#" app/build.gradle
-            sed -i "/android:text/s/#/#=\"${{ env.tag }}\"#\\\\n\\\\n#" app/src/main/res/launcher.xml
-          fi
-          echo '移除阿里云镜像，防止构建失败'
-          sed -i '/maven { url "https:\/\/maven.aliyun.com\/repository\/public" }/d' build.gradle
-          sed -i '/maven { url "https:\/\/maven.aliyun.com\/nexus\/content\/repositories\/public" }/d' build.gradle
+          # 用更稳妥的写法，避免引号嵌套问题
+          sed -i "s/versionName \".*\"/versionName \"${{ env.tag }}\"/" app/build.gradle
+          sed -i "s/android:text=\"[^\"]*\"/android:text=\"${{ env.tag }}\"/" app/src/main/res/launcher.xml
+
+          echo '移除阿里云镜像'
+          sed -i '/maven.*aliyun/d' build.gradle
+          sed -i '/maven.*aliyun/d' app/build.gradle
 
       - name: 打包源码
         if: ${{ env.commit }}
@@ -77,7 +66,7 @@ jobs:
         run: |
           tar -cJf sourceCode-${{ env.commitS }}.tar.xz --exclude=.git --exclude=.github *
 
-      - name: 配置Python环境（仅q215613905需要）
+      - name: 配置Python环境
         if: ${{ matrix.userName == 'q215613905' && env.commit }}
         uses: actions/setup-python@v6
         with:
@@ -89,7 +78,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4
 
-      - name: 修复Python路径问题
+      - name: 修复Python路径
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
         run: |
@@ -135,11 +124,7 @@ jobs:
           mkdir -p apk/
           for file in `find ~ -name "*release*.apk" -print`; do
             base=`basename "$file"`;
-            if [[ "$base" == TVBox* ]]; then
-              new_base=$(echo "$base" | sed "s/release/${{ matrix.userName }}_${{ env.tag }}/")
-            else
-              new_base="TVBox_${{ matrix.userName }}_${{ env.tag }}.apk"
-            fi
+            new_base="TVBox_${{ matrix.userName }}_${{ env.tag }}.apk"
             mv "$file" "apk/$new_base"
           done
           mv sourceCode-${{ env.commitS }}.* apk/
