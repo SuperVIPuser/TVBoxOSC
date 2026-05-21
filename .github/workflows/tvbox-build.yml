@@ -1,0 +1,39 @@
+name: TVBoxOSC纯净编译
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出环境
+        uses: actions/checkout@v4
+
+      - name: 拉取 TVBoxOSC 源码
+        run: |
+          git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox
+          cd tvbox
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+
+      - name: 配置 JDK17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: 编译 Release 包
+        working-directory: tvbox
+        run: |
+          ./gradlew clean assembleRelease --no-build-cache
+
+      - name: 收集APK
+        run: |
+          mkdir apk
+          cp tvbox/app/build/outputs/apk/release/*.apk apk/
+
+      - name: 上传成品APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVBoxOSC_APK
+          path: apk/
