@@ -10,14 +10,10 @@ jobs:
       fail-fast: false
       matrix:
         repo:
-          - user: q215613905
-            name: TVBoxOS
-            branch: main
-            jdk: 17
           - user: takagen99
             name: Box
             branch: main
-            jdk: 17
+            jdk: 11
 
     steps:
       - name: 拉取本仓库代码
@@ -27,28 +23,30 @@ jobs:
         run: |
           git clone --depth 1 -b ${{ matrix.repo.branch }} https://github.com/${{ matrix.repo.user }}/${{ matrix.repo.name }} tvbox-src
 
-      - name: 配置构建环境与修复依赖
+      - name: 修复构建配置（核心步骤）
         working-directory: tvbox-src
         run: |
-          # 1. 创建并配置local.properties
+          # 1. 创建local.properties，解决文件缺失问题
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
-          # 2. 替换所有失效镜像，改为稳定源
-          sed -i 's|maven { url "https://maven.aliyun.com/repository/public" }||g' build.gradle
-          sed -i 's|maven { url "https://maven.aliyun.com/nexus/content/repositories/public" }||g' build.gradle
-          sed -i 's|maven { url "https://jitpack.io" }|maven { url "https://jitpack.io" credentials { username "dummy" password "dummy" } }|g' build.gradle
+          # 2. 彻底删除所有阿里云镜像配置
+          sed -i '/maven.*aliyun/d' build.gradle
+          sed -i '/maven.*aliyun/d' app/build.gradle
 
-          # 3. 配置通用签名
+          # 3. 给JitPack配置匿名认证，解决401问题
+          sed -i 's|url "https://jitpack.io"|url "https://jitpack.io" credentials { username "github" password "" }|g' build.gradle
+
+          # 4. 配置通用签名
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
-          # 4. 授予执行权限
+          # 5. 授予执行权限
           chmod +x gradlew
 
-      - name: 配置JDK环境
+      - name: 配置JDK环境（改用兼容的JDK11）
         uses: actions/setup-java@v4
         with:
           java-version: ${{ matrix.repo.jdk }}
