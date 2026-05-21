@@ -1,4 +1,4 @@
-name: TVBox极简构建（修复Python路径）
+name: TVBox稳定构建
 
 on:
   workflow_dispatch:
@@ -10,32 +10,24 @@ jobs:
       - name: 拉取本仓库代码
         uses: actions/checkout@v4
 
-      - name: 拉取TVBox源码
+      - name: 克隆稳定版TVBox源码
         run: |
-          git clone --depth 1 https://github.com/q215613905/TVBoxOS tvbox-src
+          git clone --depth 1 https://github.com/o0HalfLife0o/TVBoxOSC tvbox-src
 
-      - name: 配置Python环境
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.8'
-
-      - name: 修复构建配置（核心步骤）
+      - name: 配置构建环境
         working-directory: tvbox-src
         run: |
-          # 1. 创建local.properties
+          # 创建local.properties
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
-          # 2. 修复pyramid模块里硬编码的Windows Python路径
-          sed -i 's|buildPython.*python.exe|buildPython "python3"|g' pyramid/build.gradle
-
-          # 3. 配置通用签名
+          # 配置通用签名
           echo "RELEASE_STORE_FILE=tvbox.jks" >> gradle.properties
           echo "RELEASE_KEY_ALIAS=tvbox" >> gradle.properties
           echo "RELEASE_STORE_PASSWORD=123456" >> gradle.properties
           echo "RELEASE_KEY_PASSWORD=123456" >> gradle.properties
 
-          # 4. 授予执行权限
+          # 授予执行权限
           chmod +x gradlew
 
       - name: 配置JDK 17
@@ -57,6 +49,6 @@ jobs:
       - name: 上传成品APK
         uses: actions/upload-artifact@v4
         with:
-          name: TVBox极简版APK
+          name: TVBox稳定版APK
           path: output/
           retention-days: 30
